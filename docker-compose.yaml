@@ -41,3 +41,13 @@ services:
         done;
         kafka-topics.sh --create --topic binance_agg_trade --partitions 3 --replication-factor 1 --if-not-exists --zookeeper zookeeper:2181;
       '
+  clickhouse-server:
+    image: yandex/clickhouse-server
+    container_name: clickhouse-server
+    ports:
+      - '8123:8123'
+      - '9000:9000'
+    volumes:
+      - ./data:/var/lib/clickhouse
+    ulimits:
+      nofile: 262144 
