@@ -6,7 +6,7 @@ from pyspark.sql.functions import from_unixtime
 
 spark = (SparkSession.builder \
     .appName("KafkaConsumer") \
-    .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0") \
+    .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,com.clickhouse:clickhouse-jdbc:0.8.2") \
     .getOrCreate())
 
 schema = StructType([
@@ -39,7 +39,7 @@ df_string = df \
 df_table = df_string.select("data.*") \
     .withColumnRenamed("e", "event_type") \
     .withColumnRenamed("a", "agg_trade_id") \
-    .withColumnRenamed("s", "symbol") \
+    .withColumnRenamed("s", "traded_pair") \
     .withColumnRenamed("p", "price") \
     .withColumnRenamed("q", "quantity") \
     .withColumnRenamed("f", "first_trade_id") \
@@ -48,13 +48,13 @@ df_table = df_string.select("data.*") \
     .withColumnRenamed("m", "is_market_maker")
 
 df_table = df_table \
+    .where(df_table.agg_trade_id.isNotNull()) \
     .withColumn("trade_value", (col("price") * col("quantity")).cast(DecimalType(10, 4))) \
     .withColumn("delay_ms", col("event_time") - col("trade_time")) \
-    .withColumn("event_time", from_unixtime(col("event_time") / 1000, "yyyy-MM-dd HH:mm:ss.SSS")) \
-    .withColumn("trade_time", from_unixtime(col("trade_time") / 1000, "yyyy-MM-dd HH:mm:ss.SSS")) \
+    .withColumn("event_time", from_unixtime(col("event_time") / 1000, "yyyy-MM-dd HH:mm:ss")) \
+    .withColumn("trade_time", from_unixtime(col("trade_time") / 1000, "yyyy-MM-dd HH:mm:ss")) \
 
-
-windowedSum = df_table.groupBy(
+""" windowedSum = df_table.groupBy(
     window(col("trade_time"), "10 minutes", "5 minutes"),
     col("symbol")
 ).agg(
@@ -62,8 +62,34 @@ windowedSum = df_table.groupBy(
     sum("trade_value").alias("total_trade_value"),
     count("agg_trade_id").alias("total_count_trade")
 ).orderBy(col("window").desc())
+ """
 
+url = "jdbc:ch://localhost:8123/default"
+user = "default"
+password = ""  
+driver = "com.clickhouse.jdbc.ClickHouseDriver"
+table_name = "from_pySpark"
 
+def write_to_clickhouse(batch_df, epoch_id):
+    batch_df.write \
+        .format("jdbc") \
+        .option("driver", driver) \
+        .option("url", url) \
+        .option("user", user) \
+        .option("password", password) \
+        .option("dbtable",table_name) \
+        .mode("append") \
+        .save()
+
+query = df_table \
+    .writeStream \
+    .outputMode("append") \
+    .trigger(processingTime='5 seconds') \
+    .foreachBatch(write_to_clickhouse) \
+    .start() \
+    .awaitTermination()
+
+""" 
 query = df_table \
     .writeStream \
     .outputMode("append") \
@@ -72,7 +98,7 @@ query = df_table \
     .trigger(processingTime='5 seconds') \
     .start() \
     .awaitTermination()
-
+ """
 """ query = windowedSum.writeStream \
     .outputMode("complete") \
     .format("console") \
