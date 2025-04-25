@@ -10,7 +10,11 @@ KAFKA_TOPIC = 'binance_agg_trade'
 
 producer = KafkaProducer(
     bootstrap_servers=[KAFKA_BROKER],
-    value_serializer=lambda v: json.dumps(v).encode('utf-8')
+    value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+    max_in_flight_requests_per_connection=1,
+    #enable_idempotence=True,
+    acks='all',
+    retries=10
 )
 
 def message_handler(_, message):

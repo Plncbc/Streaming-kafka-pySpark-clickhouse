@@ -10,17 +10,11 @@ create table IF NOT EXISTS from_pySpark(
 	trade_time DateTime,
 	is_market_maker Boolean,
 	trade_value Float32,
-	delay_ms Int32
+	delay_ms Float32
 )
-ENGINE = MergeTree
+ENGINE = ReplacingMergeTree
 PARTITION BY toYYYYMM(event_time)
-Order by agg_trade_id
-
-drop table from_pySpark 
-
-drop table table_for_mview 
-
-drop VIEW market_analysis_mv
+Order by agg_trade_id;
 
 
 create table IF NOT EXISTS table_for_mview(
@@ -34,17 +28,17 @@ create table IF NOT EXISTS table_for_mview(
     volatility Float32
 )
 ENGINE = ReplacingMergeTree
-Order by agg_time
+PARTITION BY toYYYYMM(agg_time)
+Order by agg_time;
 
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS market_analysis_mv
-to table_for_mview
-AS
+REFRESH EVERY 1 MINUTE APPEND TO table_for_mview AS
 select
 	traded_pair,
-	toYYYYMMDD(event_time) as agg_time,
-    round(avg(100 - 100 / (1 + gain / loss)), 5) as RSI,
-    round(last_value(price) - first_value(price), 5) as curr_coin_state_at_the_end_of_time_period,
+	toStartOfMinute(event_time) as agg_time,
+    avg(100 - 100 / (1 + gain / loss)) as RSI,
+    last_value(price) - first_value(price) as curr_coin_state_at_the_end_of_time_period,
     avg(price) as expectation,
     stddevPopStable(price) as standard_deviation,
     varPop(price) as dispersion,
@@ -52,11 +46,12 @@ select
 from (
 		select 
 			traded_pair,
+			prev.agg_trade_id,
 			curr.agg_trade_id,
 		    event_time,
 		    curr.price,
-		    avgIf(curr.price - prev.price, curr.price - prev.price > 0) OVER (PARTITION BY traded_pair ORDER BY event_time) AS gain,
-		   	avgIf(abs(curr.price - prev.price), curr.price - prev.price < 0) OVER (PARTITION BY traded_pair ORDER BY event_time) AS loss,
+		    avgIf(curr.price - prev.price, curr.price - prev.price > 0) OVER (PARTITION BY traded_pair ORDER BY agg_trade_id) AS gain,
+		   	avgIf(abs(curr.price - prev.price), curr.price - prev.price < 0) OVER (PARTITION BY traded_pair ORDER BY agg_trade_id) AS loss,
 		   	log(curr.price / prev.price) as for_volatility
 		FROM from_pySpark curr
 		join from_pySpark prev 
@@ -64,11 +59,28 @@ from (
 		WHERE event_time BETWEEN now() - INTERVAL 14 day AND now() + INTERVAL 1 day
 	)
 where not(isNaN(gain) or isNaN(loss))
-group by traded_pair, agg_time
+group by traded_pair, agg_time;
 
 
-SELECT *
+drop table from_pySpark;
+
+drop table table_for_mview;
+
+drop VIEW market_analysis_mv;
+
+
+
+SELECT * FROM system.build_options 
+WHERE name IN ('VERSION_FULL', 'VERSION_DESCRIBE');
+
+SELECT version() AS clickhouse_version;
+
+select *
+from from_pySpark fps 
+
+SELECT distinct *
 from market_analysis_mv
+order by agg_time desc
 
 SELECT *
-FROM system.query_log
+FROM system.query_log;
