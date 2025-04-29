@@ -37,7 +37,6 @@ df_string = df \
     .withColumn("json_string", expr("SUBSTRING(json_string, 2, LENGTH(json_string) - 2)")) \
     .withColumn("data", from_json(col("json_string"), schema)) \
 
-
 df_table = df_string.select("data.*") \
     .withColumnRenamed("e", "event_type") \
     .withColumnRenamed("a", "agg_trade_id") \
@@ -51,22 +50,12 @@ df_table = df_string.select("data.*") \
 
 df_table = df_table \
     .where(df_table.agg_trade_id.isNotNull()) \
-    .withColumn("price", col("price").cast(DecimalType(10, 2))) \
-    .withColumn("quantity", col("quantity").cast(DecimalType(10, 2))) \
-    .withColumn("trade_value", (col("price") * col("quantity")).cast(DecimalType(10, 4))) \
+    .withColumn("price", col("price").cast(DecimalType(12, 3))) \
+    .withColumn("quantity", col("quantity").cast(DecimalType(12, 4))) \
+    .withColumn("trade_value", (col("price") * col("quantity")).cast(DecimalType(20, 6))) \
     .withColumn("delay_ms", col("event_time") - col("trade_time")) \
     .withColumn("event_time", from_unixtime(col("event_time") / 1000, "yyyy-MM-dd HH:mm:ss")) \
     .withColumn("trade_time", from_unixtime(col("trade_time") / 1000, "yyyy-MM-dd HH:mm:ss")) \
-
-""" windowedSum = df_table.groupBy(
-    window(col("trade_time"), "10 minutes", "5 minutes"),
-    col("symbol")
-).agg(
-    avg("trade_value").alias("avg_trade_value"),
-    sum("trade_value").alias("total_trade_value"),
-    count("agg_trade_id").alias("total_count_trade")
-).orderBy(col("window").desc())
-"""
 
 url = "jdbc:ch://localhost:8123/default"
 user = "user"
@@ -93,7 +82,6 @@ query = df_table \
     .foreachBatch(write_to_clickhouse) \
     .start() \
     .awaitTermination()
-
     
 """ 
 query = df_table \
@@ -101,13 +89,8 @@ query = df_table \
     .outputMode("append") \
     .format("console") \
     .option("truncate", "false") \
-    .trigger(processingTime='5 seconds') \
+    .trigger(processingTime='10 seconds') \
     .start() \
     .awaitTermination()
-  """
-""" query = windowedSum.writeStream \
-    .outputMode("complete") \
-    .format("console") \
-    .option("truncate", "false") \
-    .start() \
-    .awaitTermination() """
+
+ """

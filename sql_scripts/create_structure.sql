@@ -1,3 +1,4 @@
+create
 create table IF NOT EXISTS from_pySpark(
 	event_type FixedString(8),
 	event_time DateTime,
@@ -60,27 +61,3 @@ from (
 	)
 where not(isNaN(gain) or isNaN(loss))
 group by traded_pair, agg_time;
-
-
-drop table from_pySpark;
-
-drop table table_for_mview;
-
-drop VIEW market_analysis_mv;
-
-
-
-SELECT * FROM system.build_options 
-WHERE name IN ('VERSION_FULL', 'VERSION_DESCRIBE');
-
-SELECT version() AS clickhouse_version;
-
-select *
-from from_pySpark fps 
-
-SELECT distinct *
-from market_analysis_mv
-order by agg_time desc
-
-SELECT *
-FROM system.query_log;

@@ -9,7 +9,6 @@ services:
     networks:
       - kafka-net
 
-
   kafka-1:
     image: confluentinc/cp-kafka:latest
     ports:
@@ -69,7 +68,6 @@ services:
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
-    container_name: kafka-ui
     depends_on:
       - kafka-1
       - kafka-2
@@ -86,11 +84,8 @@ services:
 
   create-topics:
     image: confluentinc/cp-kafka:latest
-    container_name: create-topics
     depends_on:
-      - kafka-1
-      - kafka-2
-      - kafka-3
+      - kafka-ui
     command: >
       sh -c '
         until kafka-topics --bootstrap-server kafka-1:19092 --list; do
@@ -98,12 +93,83 @@ services:
         done;
         kafka-topics --create \
           --topic binance_agg_trade \
-          --partitions 5 \
+          --partitions 6 \
+          --replication-factor 3 \
+          --if-not-exists \
+          --bootstrap-server kafka-1:19092,kafka-2:19093,kafka-3:19094;
+
+          kafka-topics --create \
+          --topic main_producer_status \
+          --partitions 3 \
           --replication-factor 3 \
           --if-not-exists \
           --bootstrap-server kafka-1:19092,kafka-2:19093,kafka-3:19094;'
     networks:
       - kafka-net
+
+  producer_main:
+    image: python:latest
+    depends_on:
+      create-topics:
+        condition: service_completed_successfully
+    restart: on-failure
+    working_dir: /app/main
+    volumes:
+      - ./producer:/app/main
+      - ./cache_libs:/tmp/pip-cache
+    command: >
+      sh -c "pip install --cache-dir /tmp/pip-cache -r requirements.txt && python3 producer.py"
+    networks:
+      - kafka-net
+
+  producer_backup:
+    image: python:latest
+    depends_on:
+      create-topics:
+        condition: service_completed_successfully
+    restart: on-failure
+    working_dir: /app/main
+    volumes:
+      - ./producer_backup:/app/main
+      - ./cache_libs:/tmp/pip-cache
+    command: >
+      sh -c "pip install --cache-dir /tmp/pip-cache -r requirements.txt && python3 producer_backup.py"
+    networks:
+      - kafka-net
+
+  spark-master:
+    image: bitnami/spark:latest
+    environment:
+      - SPARK_MODE=master
+    ports:
+      - "8090:8080"
+      - "7077:7077"
+    volumes:
+      - ./consumer_pyspark/:/app
+    command: >
+      bash -c "
+        /opt/bitnami/scripts/spark/entrypoint.sh /opt/bitnami/scripts/spark/run.sh &&
+        /opt/bitnami/spark/bin/spark-submit --master spark://spark-master:7077 /app/consumer.py
+      "
+    networks:
+      - kafka-net
+
+  spark-worker-1:
+    image: bitnami/spark:latest
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+    networks:
+      - kafka-net
+
+  spark-worker-2:
+    image: bitnami/spark:latest
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+    networks:
+      - kafka-net
+
 
   clickhouse-server:
     image: clickhouse:latest
@@ -113,6 +179,7 @@ services:
       - '9000:9000'
     volumes:
       - ./data:/var/lib/clickhouse
+        ./sql_scripts:/docker-entrypoint-initdb.d
     environment:
       CLICKHOUSE_USER: "user"
       CLICKHOUSE_PASSWORD: "123"
