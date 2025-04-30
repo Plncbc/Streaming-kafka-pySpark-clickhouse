@@ -1,4 +1,3 @@
-create
 create table IF NOT EXISTS from_pySpark(
 	event_type FixedString(8),
 	event_time DateTime,
