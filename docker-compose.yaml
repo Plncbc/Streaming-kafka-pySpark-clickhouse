@@ -185,7 +185,6 @@ services:
       --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,com.clickhouse:clickhouse-jdbc:0.8.2 \
       /app/consumer.py"
     volumes:
-      - ./spark_cache:/opt/bitnami/spark/.ivy2/cache
       - ./consumer_pyspark/:/app
     networks:
       - kafka-net
