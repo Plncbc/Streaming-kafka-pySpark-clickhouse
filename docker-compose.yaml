@@ -141,16 +141,15 @@ services:
     image: bitnami/spark:latest
     environment:
       - SPARK_MODE=master
+      - SPARK_MASTER_PORT=7077
+      - SPARK_KAFKA_BOOTSTRAP_SERVERS=kafka-1:19092
+      - SPARK_HOME=/opt/bitnami/spark
     ports:
       - "8090:8080"
       - "7077:7077"
     volumes:
+
       - ./consumer_pyspark/:/app
-    command: >
-      bash -c "
-        /opt/bitnami/scripts/spark/entrypoint.sh /opt/bitnami/scripts/spark/run.sh &&
-        /opt/bitnami/spark/bin/spark-submit --master spark://spark-master:7077 /app/consumer.py
-      "
     networks:
       - kafka-net
 
@@ -159,6 +158,8 @@ services:
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2G
     networks:
       - kafka-net
 
@@ -167,9 +168,27 @@ services:
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2G
     networks:
       - kafka-net
 
+  spark-submit-client:
+    image: bitnami/spark:latest
+    depends_on:
+      create-topics:
+        condition: service_completed_successfully
+    command: >
+      bash -c "
+      /opt/bitnami/spark/bin/spark-submit \
+      --master spark://spark-master:7077 \
+      --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,com.clickhouse:clickhouse-jdbc:0.8.2 \
+      /app/consumer.py"
+    volumes:
+      - ./spark_cache:/opt/bitnami/spark/.ivy2/cache
+      - ./consumer_pyspark/:/app
+    networks:
+      - kafka-net
 
   clickhouse-server:
     image: clickhouse:latest
@@ -179,13 +198,15 @@ services:
       - '9000:9000'
     volumes:
       - ./data:/var/lib/clickhouse
-        ./sql_scripts:/docker-entrypoint-initdb.d
+      - ./sql_scripts/:/docker-entrypoint-initdb.d
     environment:
       CLICKHOUSE_USER: "user"
       CLICKHOUSE_PASSWORD: "123"
     ulimits:
       nofile: 262144
+    networks:
+      - kafka-net
     
 networks:
   kafka-net:
-    driver: bridge 
+    driver: bridge

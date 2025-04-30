@@ -7,25 +7,28 @@ from pyspark.sql.functions import from_unixtime
 spark = (SparkSession.builder \
     .appName("KafkaConsumer") \
     .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,com.clickhouse:clickhouse-jdbc:0.8.2") \
-    .config("spark.sql.streaming.checkpointLocation", "./SparkCheckpoint") # папка будет в рабочей директории Python
+    .config("spark.sql.streaming.checkpointLocation", "./SparkCheckpoint") \
+    .config("spark.executor.memory", "2g") \
+    .config("spark.driver.memory", "2g") \
+    .config("spark.executor.cores", "2") \
     .getOrCreate())
 
 schema = StructType([
-    StructField("e", StringType(), True),  
-    StructField("event_time", LongType(), True),    
-    StructField("a", LongType(), True),    
-    StructField("s", StringType(), True),  
-    StructField("p", StringType(), True),  
-    StructField("q", StringType(), True),  
-    StructField("f", LongType(), True),    
-    StructField("l", LongType(), True),    
-    StructField("T", LongType(), True),    
-    StructField("m", BooleanType(), True)  
+    StructField("e", StringType(), True),
+    StructField("event_time", LongType(), True),
+    StructField("a", LongType(), True),
+    StructField("s", StringType(), True),
+    StructField("p", StringType(), True),
+    StructField("q", StringType(), True),
+    StructField("f", LongType(), True),
+    StructField("l", LongType(), True),
+    StructField("T", LongType(), True),
+    StructField("m", BooleanType(), True)
 ])
 
 df = spark.readStream \
     .format("kafka") \
-    .option("kafka.bootstrap.servers", "localhost:9092") \
+    .option("kafka.bootstrap.servers", "kafka-1:19092") \
     .option("subscribe", "binance_agg_trade") \
     .option("startingOffsets", "earliest") \
     .load() \
@@ -57,7 +60,7 @@ df_table = df_table \
     .withColumn("event_time", from_unixtime(col("event_time") / 1000, "yyyy-MM-dd HH:mm:ss")) \
     .withColumn("trade_time", from_unixtime(col("trade_time") / 1000, "yyyy-MM-dd HH:mm:ss")) \
 
-url = "jdbc:ch://localhost:8123/default"
+url = "jdbc:ch://clickhouse-server:8123/default"
 user = "user"
 password = "123"  
 driver = "com.clickhouse.jdbc.ClickHouseDriver"
@@ -78,19 +81,8 @@ def write_to_clickhouse(batch_df, epoch_id):
 query = df_table \
     .writeStream \
     .outputMode("append") \
-    .trigger(processingTime='10 seconds') \
+    .trigger(processingTime='20 seconds') \
     .foreachBatch(write_to_clickhouse) \
     .start() \
     .awaitTermination()
-    
-""" 
-query = df_table \
-    .writeStream \
-    .outputMode("append") \
-    .format("console") \
-    .option("truncate", "false") \
-    .trigger(processingTime='10 seconds') \
-    .start() \
-    .awaitTermination()
 
- """
