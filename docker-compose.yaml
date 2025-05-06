@@ -25,6 +25,11 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
     depends_on:
       - zookeeper
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "19092"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     networks:
       - kafka-net
 
@@ -44,6 +49,11 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
     depends_on:
       - zookeeper
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "19093"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     networks:
       - kafka-net
 
@@ -63,6 +73,11 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
     depends_on:
       - zookeeper
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "19094"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     networks:
       - kafka-net
 
@@ -85,7 +100,12 @@ services:
   create-topics:
     image: confluentinc/cp-kafka:latest
     depends_on:
-      - kafka-ui
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
     command: >
       sh -c '
         until kafka-topics --bootstrap-server kafka-1:19092 --list; do
@@ -104,36 +124,6 @@ services:
           --replication-factor 3 \
           --if-not-exists \
           --bootstrap-server kafka-1:19092,kafka-2:19093,kafka-3:19094;'
-    networks:
-      - kafka-net
-
-  producer_main:
-    image: python:latest
-    depends_on:
-      create-topics:
-        condition: service_completed_successfully
-    restart: on-failure
-    working_dir: /app/main
-    volumes:
-      - ./producer/:/app/main/
-      - ./cache_libs/:/tmp/pip-cache/
-    command: >
-      sh -c "pip install --cache-dir /tmp/pip-cache -r requirements.txt && python3 producer.py"
-    networks:
-      - kafka-net
-
-  producer_backup:
-    image: python:latest
-    depends_on:
-      create-topics:
-        condition: service_completed_successfully
-    restart: on-failure
-    working_dir: /app/main
-    volumes:
-      - ./producer_backup/:/app/main/
-      - ./cache_libs/:/tmp/pip-cache/
-    command: >
-      sh -c "pip install --cache-dir /tmp/pip-cache -r requirements.txt && python3 producer_backup.py"
     networks:
       - kafka-net
 
@@ -181,7 +171,7 @@ services:
       bash -c "
       /opt/bitnami/spark/bin/spark-submit \
       --master spark://spark-master:7077 \
-      --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,com.clickhouse:clickhouse-jdbc:0.8.2 \
+      --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.4,com.clickhouse:clickhouse-jdbc:0.8.4 \
       /app/consumer.py"
     volumes:
       - ./consumer_pyspark/:/app/
@@ -202,6 +192,34 @@ services:
       CLICKHOUSE_PASSWORD: "123"
     ulimits:
       nofile: 262144
+    networks:
+      - kafka-net
+
+  producer_main:
+    image: python:latest
+    depends_on:
+     - spark-submit-client
+    restart: on-failure
+    working_dir: /app/main
+    volumes:
+      - ./producer/:/app/main/
+      - ./cache_libs/:/tmp/pip-cache/
+    command: >
+      bash -c "sleep 65 && pip install --cache-dir /tmp/pip-cache -r requirements.txt && python3 producer.py"
+    networks:
+      - kafka-net
+
+  producer_backup:
+    image: python:latest
+    depends_on:
+     - spark-submit-client
+    restart: on-failure
+    working_dir: /app/main
+    volumes:
+      - ./producer_backup/:/app/main/
+      - ./cache_libs/:/tmp/pip-cache/
+    command: >
+      bash -c "sleep 75 && pip install --cache-dir /tmp/pip-cache -r requirements.txt && python3 producer_backup.py"
     networks:
       - kafka-net
     

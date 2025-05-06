@@ -6,7 +6,7 @@ from pyspark.sql.functions import from_unixtime
 
 spark = (SparkSession.builder \
     .appName("KafkaConsumer") \
-    .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,com.clickhouse:clickhouse-jdbc:0.8.2") \
+    .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.4,com.clickhouse:clickhouse-jdbc:0.8.4") \
     .config("spark.sql.streaming.checkpointLocation", "./SparkCheckpoint") \
     .config("spark.executor.memory", "2g") \
     .config("spark.driver.memory", "2g") \
@@ -85,4 +85,3 @@ query = df_table \
     .foreachBatch(write_to_clickhouse) \
     .start() \
     .awaitTermination()
-
